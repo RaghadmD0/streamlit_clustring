@@ -30,19 +30,19 @@ fashion_categories = {
 # based on the output of the K-Means cluster composition analysis.
 # Example (replace with your actual findings):
 kmeans_dominant_categories = {
-    0: 'Shirt (Mixed)',
-    1: 'Sandal (Mixed)',
-    2: 'Ankle boot (Pure)',
+    0: 'Trouser (Dominant)',
+    1: 'Sandal (Dominant)',
+    2: 'Ankle boot (Dominant)',
     3: 'Bag (Pure)',
-    4: 'Sneaker (Mixed)',
-    5: 'Trouser (Mixed)',
-    6: 'Pullover (Mixed)',
-    7: 'Coat (Mixed)',
-    8: 'T-shirt/top (Mixed)',
-    9: 'Bag (Pure)'
+    4: 'Sneaker (Dominant)',
+    5: 'Mixed Garments', # T-shirt/top, Dress, Shirt, Pullover, Trouser, Coat, Bag, Sandal, Ankle boot
+    6: 'Mixed Garments', # Bag, Shirt, Pullover, Coat, T-shirt/top, Dress, Trouser, Ankle boot, Sandal
+    7: 'Ankle boot (Dominant)',
+    8: 'Mixed Garments', # Coat, Pullover, Shirt, Bag, T-shirt/top, Trouser, Dress
+    9: 'Mixed Garments' # T-shirt/top, Dress, Shirt, Coat, Trouser, Pullover, Bag
 }
-# You can refine these names based on the purity you observed.
-# For example, if cluster 2 was 85.27% Ankle boot, you might call it 'Ankle boot (Dominant)'.
+# I've updated these based on the cluster composition analysis outputs.
+# You can refine these names further based on the percentages you observed.
 
 
 # --- Load models and data ---
@@ -64,13 +64,10 @@ def load_resources():
         original_train_labels = None
 
         if os.path.exists(original_train_images_path) and os.path.exists(original_train_labels_path):
-             # st.info(f"Loading original training images from {original_train_images_path}") # Commented out
              original_train_images = np.load(original_train_images_path)
              original_train_labels = np.load(original_train_labels_path)
         else:
-             # st.warning(f"Original training images and labels not found at {original_train_images_path} and {original_train_labels_path}.") # Commented out
-             # st.warning("Similar images and sample selection might not work correctly.") # Commented out
-             pass # Keep pass or remove if block if original data is essential
+             st.warning(f"Original training images and labels not found at {original_train_images_path} and {original_train_labels_path}. Similar images and sample selection might not work correctly.")
 
 
         # Transform the sampled data using the loaded PCA model
@@ -87,7 +84,7 @@ def load_resources():
              df_train_pca_2d['Original_Category'] = pd.Series(sampled_original_labels).map(fashion_categories)
              df_train_pca_2d['Original_Label'] = sampled_original_labels # Keep numerical label
         else:
-             # st.warning("Original training labels are not fully available or do not match sampled data size. Cannot color plot by category.") # Commented out
+             st.warning("Original training labels are not fully available or do not match sampled data size. Cannot color plot by category.")
              df_train_pca_2d['Original_Category'] = 'Unknown'
              df_train_pca_2d['Original_Label'] = 'Unknown'
 
@@ -102,18 +99,16 @@ def load_resources():
         st.stop() # Stop the app on other loading errors
 
 
+# --- Load resources and initialize Streamlit app ---
 pca, kmeans, train_images_sample_flat, train_labels_sample, train_pca_transformed, df_train_pca_2d, random_indices_sample, original_train_images, original_train_labels = load_resources()
 
 
 st.title("Fashion MNIST Image Clustering with PCA and K-Means")
 st.write("Select a sample 28x28 grayscale fashion item image from the sidebar to see its predicted cluster and location in the PCA space.")
 
-# --- Removed Upload user image section ---
-# uploaded_file = st.file_uploader("Upload a 28x28 image", type=["png", "jpg", "jpeg"])
-
-# --- Select a Sample Image from sidebar with improved UI ---
-st.sidebar.header("Explore Sample Images") # Use header for a clearer title
-st.sidebar.markdown("Choose a category below to load a random sample image and see its clustering results.") # Descriptive text
+# --- Select a Sample Image from sidebar ---
+st.sidebar.header("Explore Sample Images")
+st.sidebar.markdown("Choose a category below to load a random sample image and see its clustering results.")
 
 # Only show sample selection if original images and labels were loaded successfully
 img_array = None
@@ -125,43 +120,63 @@ sample_image_original = None # Define here to make it available outside the if b
 
 if original_train_images is not None and original_train_labels is not None:
     sample_options = {name: label for label, name in fashion_categories.items()}
-    # Use a clearer label for the selectbox
-    selected_category_name = st.sidebar.selectbox("Select Fashion Category:", list(sample_options.keys()))
+    selected_category_name = st.sidebar.selectbox("Select Fashion Category:", list(sample_options.keys()), key='category_select')
     selected_category_label = sample_options[selected_category_name]
 
-    # Add a separator
-    st.sidebar.markdown("---")
+    # Add a button to randomly pick an image from the selected category
+    if st.sidebar.button("Pick Random Image", key='random_pick_button'):
+        # Find indices of images from the selected category in the *original* full dataset
+        original_indices_for_category = np.where(original_train_labels == selected_category_label)[0]
+        if len(original_indices_for_category) > 0:
+            random_sample_original_index = random.choice(original_indices_for_category)
+            sample_image_original = original_train_images[random_sample_original_index]
 
-    # Find indices of images from the selected category in the *original* full dataset
-    original_indices_for_category = np.where(original_train_labels == selected_category_label)[0] # Use loaded original_train_labels
-    if len(original_indices_for_category) > 0:
-        random_sample_original_index = random.choice(original_indices_for_category)
-        sample_image_original = original_train_images[random_sample_original_index] # Use loaded original_train_images
+            # Store the selected image index and label in session state to persist it
+            st.session_state['selected_sample_original_index'] = random_sample_original_index
+            st.session_state['selected_category_label'] = selected_category_label
+            # Set a flag to indicate results should be displayed
+            st.session_state['display_results'] = True
+
+
+        else:
+            st.sidebar.write("No images found for this category in the original training data.")
+            st.session_state['selected_sample_original_index'] = None
+            st.session_state['selected_category_label'] = None
+            st.session_state['display_results'] = False # Don't display results if no image
+
+
+    # Check if an image index is stored in session state and load it for display
+    if 'selected_sample_original_index' in st.session_state and st.session_state['selected_sample_original_index'] is not None:
+        random_sample_original_index = st.session_state['selected_sample_original_index']
+        selected_category_label = st.session_state['selected_category_label']
+        selected_category_name = fashion_categories.get(selected_category_label, f"Label {selected_category_label}")
+
+        sample_image_original = original_train_images[random_sample_original_index]
 
         # Display the selected sample image with a caption
-        st.sidebar.image(sample_image_original, caption=f"Showing sample from: {selected_category_name}", width=150) # Slightly larger image
+        st.sidebar.image(sample_image_original, caption=f"Showing sample from: {selected_category_name}", width=150)
 
-        # Removed the explicit button, the selection itself will trigger processing
-
-        # Process the selected sample image directly
+        # Prepare the image array for processing
         img_array = sample_image_original.reshape(1, -1).astype(np.float32) / 255.0 # flatten + normalize
         display_image = Image.fromarray(sample_image_original)
         image_source = f"Sample Image ({selected_category_name})"
         original_image_label = selected_category_label # Store the original label of the sample
 
+        # Set a flag to display results if an image is loaded (only if not already set by button)
+        if 'display_results' not in st.session_state:
+            st.session_state['display_results'] = True
 
-    else:
-        st.sidebar.write("No images found for this category in the original training data.")
-        # If no images for the category, img_array remains None
+
+    st.sidebar.markdown("---")
+
 
 else:
     st.sidebar.warning("Original training images and labels not available to select samples.")
-    # If original images/labels not loaded, img_array remains None
+    st.session_state['display_results'] = False # Don't display results if original data is missing
 
 
-# --- Process the image (only a sample is available now) ---
-# The logic inside this if block will now only run if a sample image was successfully selected and processed
-if img_array is not None:
+# --- Process the image and display results (only if an image is loaded and display_results is True) ---
+if img_array is not None and st.session_state.get('display_results', False):
     st.subheader(f"{image_source}")
     st.image(display_image, caption=image_source, width=150)
 
@@ -176,43 +191,52 @@ if img_array is not None:
 
     st.write(f"Predicted K-Means Cluster: **{cluster}** ({predicted_cluster_name})")
 
-    # If it's a sample image, show its original category (this will always be true now)
+    # If it's a sample image, show its original category
     if original_image_label is not None:
         original_cat_name = fashion_categories.get(original_image_label, f"Label {original_image_label}")
         st.write(f"Original Category: **{original_cat_name}**")
 
 
     # --- Find most similar items in the SAMPLED training data ---
-    # Calculate distances to the sampled data points that the models were trained on
-    distances = np.linalg.norm(train_pca_transformed - img_pca, axis=1)
+    st.subheader(f"Most Similar Items from the Sampled Training Data (in PCA space) - Top {5}")
 
-    # Get indices of the nearest neighbors in the *sampled* data array
-    # Get top 6 including potentially the image itself if it's in the sample
-    nearest_sampled_indices = np.argsort(distances)[:] # Get all for filtering
-
-    # Filter out the selected sample image itself from the "most similar" list
-    # Find the index of the current sample image within the sampled training data
-    # This is a bit tricky because we need to find the index in train_images_sample_flat
-    # corresponding to the original_sample_original_index
-    # We can look up the original_sample_original_index within random_indices_sample
-    try:
-        current_sample_idx_in_sampled = int(np.where(random_indices_sample == random_sample_original_index)[0][0]) # Find where the original index appears in the random_indices array
-    except Exception:
-         current_sample_idx_in_sampled = None # If not found (shouldn't happen if sample comes from loaded data)
-
-
-    st.subheader(f"Most Similar Items from the Sampled Training Data (in PCA space) - Top {5}") # Display Top N
-
-    # Display the most similar items as images
     if original_train_images is not None and original_train_labels is not None:
+        # Calculate distances to the sampled data points that the models were trained on
+        distances = np.linalg.norm(train_pca_transformed - img_pca, axis=1)
+
+        # Get indices of the nearest neighbors in the *sampled* data array
+        # Get top N including potentially the image itself if it's in the sample
+        items_to_find = 6 # Find N+1 to potentially exclude the sample itself
+        nearest_sampled_indices = np.argsort(distances)[:items_to_find]
+
+        # Filter out the selected sample image itself from the "most similar" list
+        # Find the index of the current sample image within the sampled training data
+        current_sample_idx_in_sampled = None
+        if 'selected_sample_original_index' in st.session_state and st.session_state['selected_sample_original_index'] is not None:
+             try:
+                # Find the index in train_images_sample_flat corresponding to the original index
+                # Check if the original index is actually in the random_indices_sample array
+                if st.session_state['selected_sample_original_index'] in random_indices_sample:
+                    current_sample_idx_in_sampled = int(np.where(random_indices_sample == st.session_state['selected_sample_original_index'])[0][0])
+                else:
+                    # This case should ideally not happen if sample comes from loaded data
+                    current_sample_idx_in_sampled = None
+             except Exception:
+                  current_sample_idx_in_sampled = None
+
+
         displayed_count = 0
         cols = st.columns(5) # Adjust number of columns as needed, e.g., 5
-        items_to_display = 5
+        items_to_display = 5 # Display only the top N (excluding the sample itself)
 
         for sampled_idx in nearest_sampled_indices:
             # Skip the current selected sample image itself
-            if sampled_idx == current_sample_idx_in_sampled:
+            if current_sample_idx_in_sampled is not None and sampled_idx == current_sample_idx_in_sampled:
                  continue
+
+            # Ensure we don't go out of bounds if nearest_sampled_indices is smaller than items_to_find
+            if sampled_idx >= len(random_indices_sample):
+                continue
 
             # Map sampled index back to original index
             original_idx = random_indices_sample[sampled_idx]
@@ -224,8 +248,9 @@ if img_array is not None:
             original_cat = fashion_categories.get(similar_label, f"Label {similar_label}")
 
             # Display the image and info in a column
-            if displayed_count < items_to_display: # Display only the top N
-                cols[displayed_count].image(similar_img, caption=f"Dist: {dist:.2f}\nOrig: {original_cat}", width=70)
+            if displayed_count < items_to_display:
+                with cols[displayed_count]: # Use 'with' to put elements in the column
+                    st.image(similar_img, caption=f"Dist: {dist:.2f}\nOrig: {original_cat}", width=70)
                 displayed_count += 1
             else:
                 break # Stop once we have displayed N
@@ -278,7 +303,9 @@ else:
         st.error("Cannot run the application because the original training images and labels were not loaded.")
         st.warning("Please ensure 'train_images.npy' and 'train_labels.npy' are in the same directory as the script.")
     else:
-         st.write("Select a category from the sidebar to display a sample image and its clustering results.")
+         # Only show this message if no image is currently selected or display_results is False
+         if not st.session_state.get('display_results', False):
+             st.write("Select a category from the sidebar and click 'Pick Random Image' to display a sample image and its clustering results.")
 
 
 st.markdown("---")
