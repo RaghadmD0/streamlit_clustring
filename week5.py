@@ -57,8 +57,21 @@ def load_resources():
         random_indices = np.load("random_indices.npy") # Indices in the original dataset
 
         # Load the original full training images and labels (needed for displaying similar items and sampling)
-        original_train_images = np.load("train_images.npy")
-        original_train_labels = np.load("train_labels.npy")
+        original_train_images_path = "train_images.npy" # Or "train_images_full.npy" if you saved the full set
+        original_train_labels_path = "train_labels.npy"
+
+        original_train_images = None
+        original_train_labels = None
+
+        if os.path.exists(original_train_images_path) and os.path.exists(original_train_labels_path):
+             # st.info(f"Loading original training images from {original_train_images_path}") # Commented out
+             original_train_images = np.load(original_train_images_path)
+             original_train_labels = np.load(original_train_labels_path)
+        else:
+             # st.warning(f"Original training images and labels not found at {original_train_images_path} and {original_train_labels_path}.") # Commented out
+             # st.warning("Similar images and sample selection might not work correctly.") # Commented out
+             pass # Keep pass or remove if block if original data is essential
+
 
         # Transform the sampled data using the loaded PCA model
         train_pca_transformed = pca_model.transform(train_images_sample_flat)
@@ -68,16 +81,21 @@ def load_resources():
         df_train_pca_2d['KMeans_Label'] = kmeans_model.labels_ # Add K-Means cluster labels
 
         # Add original fashion categories for coloring and hover info for the SAMPLED data
-        # Map sampled indices (random_indices) to original labels
-        sampled_original_labels = original_train_labels[random_indices]
-        df_train_pca_2d['Original_Category'] = pd.Series(sampled_original_labels).map(fashion_categories)
-        df_train_pca_2d['Original_Label'] = sampled_original_labels # Keep numerical label
+        if original_train_labels is not None and len(original_train_labels) >= len(random_indices):
+             # Map sampled indices (random_indices) to original labels
+             sampled_original_labels = original_train_labels[random_indices]
+             df_train_pca_2d['Original_Category'] = pd.Series(sampled_original_labels).map(fashion_categories)
+             df_train_pca_2d['Original_Label'] = sampled_original_labels # Keep numerical label
+        else:
+             # st.warning("Original training labels are not fully available or do not match sampled data size. Cannot color plot by category.") # Commented out
+             df_train_pca_2d['Original_Category'] = 'Unknown'
+             df_train_pca_2d['Original_Label'] = 'Unknown'
 
 
         return pca_model, kmeans_model, train_images_sample_flat, train_labels_sample, train_pca_transformed, df_train_pca_2d, random_indices, original_train_images, original_train_labels
 
     except FileNotFoundError:
-        st.error("Model or data files not found. Please ensure 'pca_model.pkl', 'kmeans_model.pkl', 'train_images_sample_flat.npy', 'train_labels_sample.npy', 'random_indices.npy', 'train_images.npy', and 'train_labels.npy' are in the same directory as the script.")
+        st.error("Model or data files not found. Please ensure 'pca_model.pkl', 'kmeans_model.pkl', 'train_images_sample_flat.npy', 'train_labels_sample.npy', 'random_indices.npy' and optionally 'train_images.npy', 'train_labels.npy' are in the same directory.")
         st.stop() # Stop the app if essential files are not found
     except Exception as e:
         st.error(f"An error occurred while loading resources: {e}")
@@ -88,60 +106,61 @@ pca, kmeans, train_images_sample_flat, train_labels_sample, train_pca_transforme
 
 
 st.title("Fashion MNIST Image Clustering with PCA and K-Means")
-st.write("Upload a 28x28 grayscale fashion item image to see its predicted cluster and location in the PCA space.")
+st.write("Select a sample 28x28 grayscale fashion item image from the sidebar to see its predicted cluster and location in the PCA space.")
 
-# --- Upload user image ---
-uploaded_file = st.file_uploader("Upload a 28x28 image", type=["png", "jpg", "jpeg"])
+# --- Removed Upload user image section ---
+# uploaded_file = st.file_uploader("Upload a 28x28 image", type=["png", "jpg", "jpeg"])
 
-# --- Or select a sample image ---
-st.sidebar.title("Select a Sample Image")
-sample_options = {name: label for label, name in fashion_categories.items()}
-selected_category_name = st.sidebar.selectbox("Choose a category:", list(sample_options.keys()))
-selected_category_label = sample_options[selected_category_name]
+# --- Select a Sample Image from sidebar with improved UI ---
+st.sidebar.header("Explore Sample Images") # Use header for a clearer title
+st.sidebar.markdown("Choose a category below to load a random sample image and see its clustering results.") # Descriptive text
 
-# Find indices of images from the selected category in the *original* full dataset
+# Only show sample selection if original images and labels were loaded successfully
+img_array = None
+display_image = None
+image_source = None
+original_image_label = None # To store original label of the sample image
+sample_image_original = None # Define here to make it available outside the if block
+
+
 if original_train_images is not None and original_train_labels is not None:
+    sample_options = {name: label for label, name in fashion_categories.items()}
+    # Use a clearer label for the selectbox
+    selected_category_name = st.sidebar.selectbox("Select Fashion Category:", list(sample_options.keys()))
+    selected_category_label = sample_options[selected_category_name]
+
+    # Add a separator
+    st.sidebar.markdown("---")
+
+    # Find indices of images from the selected category in the *original* full dataset
     original_indices_for_category = np.where(original_train_labels == selected_category_label)[0] # Use loaded original_train_labels
     if len(original_indices_for_category) > 0:
         random_sample_original_index = random.choice(original_indices_for_category)
         sample_image_original = original_train_images[random_sample_original_index] # Use loaded original_train_images
 
-        # Display the selected sample image
-        st.sidebar.image(sample_image_original, caption=f"Selected Sample: {selected_category_name}", width=100)
+        # Display the selected sample image with a caption
+        st.sidebar.image(sample_image_original, caption=f"Showing sample from: {selected_category_name}", width=150) # Slightly larger image
 
-        # Button to use this sample image
-        use_sample_button = st.sidebar.button(f"Use this {selected_category_name} sample")
+        # Removed the explicit button, the selection itself will trigger processing
+
+        # Process the selected sample image directly
+        img_array = sample_image_original.reshape(1, -1).astype(np.float32) / 255.0 # flatten + normalize
+        display_image = Image.fromarray(sample_image_original)
+        image_source = f"Sample Image ({selected_category_name})"
+        original_image_label = selected_category_label # Store the original label of the sample
+
+
     else:
         st.sidebar.write("No images found for this category in the original training data.")
-        use_sample_button = False # Disable button
-        sample_image_original = None
+        # If no images for the category, img_array remains None
 
 else:
     st.sidebar.warning("Original training images and labels not available to select samples.")
-    use_sample_button = False
-    sample_image_original = None
+    # If original images/labels not loaded, img_array remains None
 
 
-# --- Process the image (uploaded or sample) ---
-img_array = None
-display_image = None
-image_source = None
-original_image_label = None # To store original label of the sample image
-
-if uploaded_file is not None:
-    img = Image.open(uploaded_file).convert("L")  # grayscale
-    img = img.resize((28, 28))
-    img_array = np.array(img).reshape(1, -1).astype(np.float32) / 255.0  # flatten + normalize
-    display_image = img
-    image_source = "Uploaded Image"
-    original_image_label = None # No original label for uploaded image
-elif use_sample_button and sample_image_original is not None:
-     img_array = sample_image_original.reshape(1, -1).astype(np.float32) / 255.0 # flatten + normalize
-     display_image = Image.fromarray(sample_image_original)
-     image_source = f"Sample Image ({selected_category_name})"
-     original_image_label = selected_category_label # Store the original label of the sample
-
-
+# --- Process the image (only a sample is available now) ---
+# The logic inside this if block will now only run if a sample image was successfully selected and processed
 if img_array is not None:
     st.subheader(f"{image_source}")
     st.image(display_image, caption=image_source, width=150)
@@ -157,8 +176,8 @@ if img_array is not None:
 
     st.write(f"Predicted K-Means Cluster: **{cluster}** ({predicted_cluster_name})")
 
-    # If it's a sample image, show its original category
-    if image_source.startswith("Sample Image") and original_image_label is not None:
+    # If it's a sample image, show its original category (this will always be true now)
+    if original_image_label is not None:
         original_cat_name = fashion_categories.get(original_image_label, f"Label {original_image_label}")
         st.write(f"Original Category: **{original_cat_name}**")
 
@@ -171,12 +190,16 @@ if img_array is not None:
     # Get top 6 including potentially the image itself if it's in the sample
     nearest_sampled_indices = np.argsort(distances)[:] # Get all for filtering
 
-    # Filter out the uploaded image itself if it's a sample from the training set
-    # This is a heuristic; for robust filtering, you'd need image comparison.
-    # For simplicity, we'll just take the top N after sorting.
-    # If the uploaded image is identical to a training image, it will be the first result with distance 0.
-    # We'll take the top N *distinct* indices that are not the uploaded image itself (if uploaded).
-    # A simple approach is to just take the top N, and if distance is very close to 0, assume it's the same image and skip it.
+    # Filter out the selected sample image itself from the "most similar" list
+    # Find the index of the current sample image within the sampled training data
+    # This is a bit tricky because we need to find the index in train_images_sample_flat
+    # corresponding to the original_sample_original_index
+    # We can look up the original_sample_original_index within random_indices_sample
+    try:
+        current_sample_idx_in_sampled = int(np.where(random_indices_sample == random_sample_original_index)[0][0]) # Find where the original index appears in the random_indices array
+    except Exception:
+         current_sample_idx_in_sampled = None # If not found (shouldn't happen if sample comes from loaded data)
+
 
     st.subheader(f"Most Similar Items from the Sampled Training Data (in PCA space) - Top {5}") # Display Top N
 
@@ -184,16 +207,16 @@ if img_array is not None:
     if original_train_images is not None and original_train_labels is not None:
         displayed_count = 0
         cols = st.columns(5) # Adjust number of columns as needed, e.g., 5
+        items_to_display = 5
 
         for sampled_idx in nearest_sampled_indices:
+            # Skip the current selected sample image itself
+            if sampled_idx == current_sample_idx_in_sampled:
+                 continue
+
             # Map sampled index back to original index
             original_idx = random_indices_sample[sampled_idx]
             dist = distances[sampled_idx]
-
-            # Skip if the distance is very close to 0 (likely the uploaded image itself) and it's an uploaded image
-            # and we haven't displayed all similar images yet.
-            if uploaded_file is not None and dist < 1e-6 and displayed_count < 5: # Use a small tolerance
-                 continue
 
             # Get the image and its original category
             similar_img = original_train_images[original_idx]
@@ -201,14 +224,14 @@ if img_array is not None:
             original_cat = fashion_categories.get(similar_label, f"Label {similar_label}")
 
             # Display the image and info in a column
-            if displayed_count < 5: # Display only the top 5
+            if displayed_count < items_to_display: # Display only the top N
                 cols[displayed_count].image(similar_img, caption=f"Dist: {dist:.2f}\nOrig: {original_cat}", width=70)
                 displayed_count += 1
             else:
-                break # Stop once we have displayed 5
+                break # Stop once we have displayed N
 
         if displayed_count == 0:
-             st.write("Could not find similar items in the sampled data.")
+             st.write("Could not find similar items in the sampled data (excluding the selected sample itself).")
 
     else:
         st.write("Original training images and labels not available to display similar items.")
@@ -250,7 +273,13 @@ if img_array is not None:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.write("Please upload an image or select a sample from the sidebar to begin.")
+    # Message to show if original images/labels are not loaded, preventing sample selection
+    if original_train_images is None or original_train_labels is None:
+        st.error("Cannot run the application because the original training images and labels were not loaded.")
+        st.warning("Please ensure 'train_images.npy' and 'train_labels.npy' are in the same directory as the script.")
+    else:
+         st.write("Select a category from the sidebar to display a sample image and its clustering results.")
+
 
 st.markdown("---")
 st.write("Clustering performed using PCA (50 components) and K-Means (K=10) on a sample of 10,000 Fashion MNIST training images.")
