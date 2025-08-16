@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-*Applying dimensionality reduction and clustering to the Fashion MNIST dataset and deploying the results in a web application.*
+*Applying dimensionality reduction and clustering to the Fashion MNIST dataset and deploying the results in streamlit web application.*
 
 ## Team Members
 
