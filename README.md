@@ -64,6 +64,10 @@ Follow these steps to get the Streamlit application running on your local machin
 5.  **Access the Application:** Your web browser should automatically open a new tab with the Streamlit application running (usually at `http://localhost:8501`). If not, open your browser and go to that address.
 
 6.  **Using the App:**
-    *   Use the sidebar on the left to select a fashion category from the dropdown list.
-    *   A random sample image from the selected category will be displayed in the sidebar.
+    *   Use the sidebar on the left to **select a fashion category** from the dropdown list.
+    *   A **random sample image** from the selected category will be displayed in the sidebar.
     *   The app will then automatically process this sample image, display its predicted K-Means cluster (including the dominant category name), show the most similar items from the sampled training data (in the PCA space), and highlight the image's location on the PCA projection plot.
+
+## Project Structure
+
+*(Optional: You can add a brief description of your project's file structure if it's more complex than a single directory).*
